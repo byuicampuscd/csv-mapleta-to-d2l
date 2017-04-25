@@ -3,230 +3,241 @@
 "use strict";
 var csvMapleTAToD2L = (function () {
 
-    var parseCsv, makeCsv, d3, objOut,
-        inNode = typeof module !== 'undefined' && typeof module.exports !== 'undefined';
+	var parseCsv, makeCsv, d3, objOut,
+		inNode = typeof module !== 'undefined' && typeof module.exports !== 'undefined';
 
-    /************** SETUP *****************/
+	/************** SETUP *****************/
 
-    //for node testing
-    if (inNode) {
-        d3 = require('d3-dsv');
-    } else {
-        d3 = window.d3;
-    }
+	//for node testing
+	if (inNode) {
+		d3 = require('d3-dsv');
+	} else {
+		d3 = window.d3;
+	}
 
-    //abstraction
-    parseCsv = d3.csvParse;
-    makeCsv = d3.csvFormat;
+	//abstraction
+	parseCsv = d3.csvParse;
+	makeCsv = d3.csvFormat;
 
-    function ordinalNumber(numIn) {
-        var onesPlace = numIn % 10,
-            ending;
-        switch (onesPlace) {
-            case 1:
-                ending = 'st';
-                break;
-            case 2:
-                ending = 'nd';
-                break;
-            case 3:
-                ending = 'rd';
-                break;
-            default:
-                ending = 'th';
-        }
-
-        return numIn + ending;
-    }
-
-    function colConversionsHasCorrectFormat(csvObj, colConversions) {
-        var errors = [];
-
-        //check if colConversion is an array
-        if (!Array.isArray(colConversions) || colConversions.length === 0) {
-            errors.push('colConversions is not an array or is an empty array.');
-        } else {
-
-            colConversions.forEach(function (col, colIndex) {
-                var hasNameOld = true;
-                //check if the colConversions obj has all the right parts
-                if (typeof col.nameOld !== 'string') {
-                    errors.push('In the colConversions array, the ' + ordinalNumber(colIndex + 1) + ' object does not have a nameOld property or is not a string.');
-                    hasNameOld = false;
-                }
-
-                if (typeof col.nameNew !== 'string') {
-                    errors.push('In the colConversions array, the ' + ordinalNumber(colIndex + 1) + ' object does not have a nameNew property or is not a string.');
-                }
-
-                if (typeof col.pointsPossible !== 'number' || isNaN(col.pointsPossible)) {
-                    errors.push('In the colConversions array, the ' + ordinalNumber(colIndex + 1) + ' object does not have a pointsPossible property or is not a number.');
-                }
-
-                //check the col is in the csv
-                if (hasNameOld && csvObj.columns.indexOf(col.nameOld) === -1) {
-                    errors.push('The ' + ordinalNumber(colIndex + 1) + ' grade column, named "' + col.nameOld + '", could not be found in the CSV.');
-                }
-            });
-
-        }
-        //see if we made it
-        if (errors.length > 0) {
-            //concat message and throw error
-            throw new Error(errors.join('\n'));
-        }
-    }
-
-    function csvHasCorrectColumns(d3ParsedCSV) {
-        var errors = [],
-            cols = d3ParsedCSV.columns,
-            totalIndex = cols.indexOf('MapleTA Calculated Total'),
-            idIndex = cols.indexOf('Student ID'),
-            loginIndex = cols.indexOf('Login');
-
-        //does it have Total as last column
-
-        if (totalIndex === -1 || totalIndex !== cols.length - 1) {
-            errors.push('The CSV does not have "Total" as the LAST column.');
-        }
-
-        //does it have a Student ID column
-        if (idIndex === -1) {
-            errors.push('The CSV does not have "Student ID" as one of the columns.');
-        }
-
-        //does it have a Login column
-        if (loginIndex === -1) {
-            errors.push('The CSV does not have "Login" as one of the columns.');
-        }
-
-        //see if we made it
-        if (errors.length > 0) {
-            //concat message and throw error
-            throw new Error(errors.join('\n'));
-        }
-
-    }
-
-    /***************************************************/
-    /******************** FUNCTIONS ********************/
-    /***************************************************/
-    function getGradeColNames(csvObj) {
-        var cols = csvObj.columns,
-            startIndex = cols.indexOf('Student ID') + 1,
-            endIndex = cols.indexOf('MapleTA Calculated Total') + 1,
-            colsOut = cols.slice(startIndex, endIndex);
-
-        //console.log("cols:", cols);
-        //console.log("startIndex:", startIndex);
-        //console.log("endIndex:", endIndex);
-        //console.log("colsOut:", colsOut);
-        
-        return colsOut;
-    }
-
-    function parse(csvText) {
-        var sumDataExists = false,
-            sumDataTitle = "Summary Data Exists",
-            columns;
-        
-        if (csvText[0] === '"' && csvText[1] === '"') {
-            csvText = csvText.replace('""', sumDataTitle);
-            sumDataExists = true;
-        }
-        
-        var csv = parseCsv(csvText);
-
-        // WARNING: This filter potentially will remove other properties from d3-dsv object.
-        if (sumDataExists) {
-            columns = csv.columns;
-            csv = csv.filter(function(item) {
-                return item[sumDataTitle] === '' || item[sumDataTitle] === '""' || item[sumDataTitle] === 'undefined'
-            });
-            csv.columns = columns;
-        }
-        // If the above return statement ever breaks, this return statement should work!
-        //      return item[sumDataTitle] !== "Mean" && item[sumDataTitle] !== "Median" && item[sumDataTitle] !== "Total Points";
-
-        //check if we have all the columns we need
-        //this will throw an error if we don't have all the columns we need.
-        //the message will be a '\n' delimited string that has the approate feed back to the user in it.
-        //We do not catch it here to make this modular
-        csvHasCorrectColumns(csv);
-
-        //we made it!
-        return csv;
-    }
-
-    //the colConversions is an array full of objects that look like this
-    /*{
-          nameOld: "My Name In CSV",
-          nameNew: "My Name Out",
-          pointsPossible: 52
-       }*/
-    function convert(csvObj, colConversions) {
-        var dataOut,
-            colsWeWant,
-            converted;
-        //error check if colConversions match in the csvObj.cols
-        //this will throw an error if every  colConversion.nameOld is not found in csvObj.columns.
-        //the message will be a '\n' delimited string that has the approate feed back to the user in it.
-        //We do not catch it here to make this modular
-        colConversionsHasCorrectFormat(csvObj, colConversions);
-        //we made it
-
-        //Convert the csvObj to have the new col names and the ones we want
-        dataOut = csvObj.map(function (row) {
-            var rowOut = {
-                "OrgDefinedId": '#' + row['Student ID'],
-                "Username": '#' + row.Login,
-                "End-of-Line Indicator": "#"
-            };
-
-            //add in the grade cols
-            colConversions.forEach(function (col) {
-		if (col.nameOld == "MapleTA Calculated Total") {
-		    row[col.nameOld] += "%";
+	function ordinalNumber(numIn) {
+		var onesPlace = numIn % 10,
+			ending;
+		switch (onesPlace) {
+			case 1:
+				ending = 'st';
+				break;
+			case 2:
+				ending = 'nd';
+				break;
+			case 3:
+				ending = 'rd';
+				break;
+			default:
+				ending = 'th';
 		}
-		
-                if (row[col.nameOld].indexOf('%') > -1) {
-                    rowOut[col.nameNew + ' Points Grade'] = (parseInt(row[col.nameOld], 10) / 100 * col.pointsPossible).toFixed(2);
-                } else if (row[col.nameOld].length == 0) {
-                    rowOut[col.nameNew + ' Points Grade'] = "";
-                } else {
-                    throw new Error("CSV file contains number scores and not percentages");
-                }
-            });
 
-            return rowOut;
-        });
+		return numIn + ending;
+	}
 
-        //back to csv text with the columns we want
-        colsWeWant = ["OrgDefinedId", "Username"];
+	function colConversionsHasCorrectFormat(csvObj, colConversions) {
+		var errors = [];
 
-        //add in the new cols in the order they gave us
-        colConversions.forEach(function (col) {
-            colsWeWant.push(col.nameNew + ' Points Grade');
-        });
+		//check if colConversion is an array
+		if (!Array.isArray(colConversions) || colConversions.length === 0) {
+			errors.push('colConversions is not an array or is an empty array.');
+		} else {
 
-        //D2L wants this
-        colsWeWant.push('End-of-Line Indicator');
+			colConversions.forEach(function (col, colIndex) {
+				var hasNameOld = true;
+				//check if the colConversions obj has all the right parts
+				if (typeof col.nameOld !== 'string') {
+					errors.push('In the colConversions array, the ' + ordinalNumber(colIndex + 1) + ' object does not have a nameOld property or is not a string.');
+					hasNameOld = false;
+				}
 
-        return makeCsv(dataOut, colsWeWant);
-    }
+				if (typeof col.nameNew !== 'string') {
+					errors.push('In the colConversions array, the ' + ordinalNumber(colIndex + 1) + ' object does not have a nameNew property or is not a string.');
+				}
 
-    /************** RETURN *****************/
-    objOut = {
-        parse: parse,
-        convert: convert,
-        getGradeColNames: getGradeColNames
-    };
+				if (typeof col.pointsPossible !== 'number' || isNaN(col.pointsPossible)) {
+					errors.push('In the colConversions array, the ' + ordinalNumber(colIndex + 1) + ' object does not have a pointsPossible property or is not a number.');
+				}
 
-    //for node testing
-    if (inNode) {
-        module.exports = objOut;
-    }
+				//check the col is in the csv
+				if (hasNameOld && csvObj.columns.indexOf(col.nameOld) === -1) {
+					errors.push('The ' + ordinalNumber(colIndex + 1) + ' grade column, named "' + col.nameOld + '", could not be found in the CSV.');
+				}
+			});
 
-    //for Broswer
-    return objOut;
+		}
+		//see if we made it
+		if (errors.length > 0) {
+			//concat message and throw error
+			throw new Error(errors.join('\n'));
+		}
+	}
+
+	function csvHasCorrectColumns(d3ParsedCSV) {
+		var errors = [],
+			cols = d3ParsedCSV.columns,
+			totalIndex = cols.indexOf('MapleTA Calculated Total'),
+			idIndex = cols.indexOf('Student ID'),
+			loginIndex = cols.indexOf('Login');
+
+		//does it have Total as last column
+
+		if (totalIndex === -1 || totalIndex !== cols.length - 1) {
+			errors.push('The CSV does not have "Total" as the LAST column.');
+		}
+
+		//does it have a Student ID column
+		if (idIndex === -1) {
+			errors.push('The CSV does not have "Student ID" as one of the columns.');
+		}
+
+		//does it have a Login column
+		if (loginIndex === -1) {
+			errors.push('The CSV does not have "Login" as one of the columns.');
+		}
+
+		//see if we made it
+		if (errors.length > 0) {
+			//concat message and throw error
+			throw new Error(errors.join('\n'));
+		}
+
+	}
+
+	/***************************************************/
+	/******************** FUNCTIONS ********************/
+	/***************************************************/
+	function getGradeColNames(csvObj) {
+		var cols = csvObj.columns,
+			startIndex = cols.indexOf('Student ID') + 1,
+			endIndex = cols.indexOf('MapleTA Calculated Total') + 1,
+			colsOut = cols.slice(startIndex, endIndex);
+
+		//console.log("cols:", cols);
+		//console.log("startIndex:", startIndex);
+		//console.log("endIndex:", endIndex);
+		//console.log("colsOut:", colsOut);
+
+		return colsOut;
+	}
+
+	function parse(csvText) {
+		var sumDataExists = false,
+			sumDataTitle = "Summary Data Exists",
+			columns;
+
+		if (csvText[0] === '"' && csvText[1] === '"') {
+			csvText = csvText.replace('""', sumDataTitle);
+			sumDataExists = true;
+		}
+
+		var csv = parseCsv(csvText);
+
+		// WARNING: This filter potentially will remove other properties from d3-dsv object.
+		if (sumDataExists) {
+			columns = csv.columns;
+			csv = csv.filter(function (item) {
+				return item[sumDataTitle] === '' || item[sumDataTitle] === '""' || item[sumDataTitle] === 'undefined'
+			});
+			csv.columns = columns;
+		}
+		// If the above return statement ever breaks, this return statement should work!
+		//      return item[sumDataTitle] !== "Mean" && item[sumDataTitle] !== "Median" && item[sumDataTitle] !== "Total Points";
+
+		//check if we have all the columns we need
+		//this will throw an error if we don't have all the columns we need.
+		//the message will be a '\n' delimited string that has the approate feed back to the user in it.
+		//We do not catch it here to make this modular
+		csvHasCorrectColumns(csv);
+
+		//we made it!
+		return csv;
+	}
+
+	//the colConversions is an array full of objects that look like this
+	/*{
+	      nameOld: "My Name In CSV",
+	      nameNew: "My Name Out",
+	      pointsPossible: 52
+	   }*/
+	function convert(csvObj, colConversions) {
+		var dataOut,
+			colsWeWant,
+			converted;
+		//error check if colConversions match in the csvObj.cols
+		//this will throw an error if every  colConversion.nameOld is not found in csvObj.columns.
+		//the message will be a '\n' delimited string that has the approate feed back to the user in it.
+		//We do not catch it here to make this modular
+		colConversionsHasCorrectFormat(csvObj, colConversions);
+		//we made it
+
+		//Convert the csvObj to have the new col names and the ones we want
+		dataOut = csvObj.map(function (row) {
+			var rowOut = {
+				"OrgDefinedId": '#' + row['Student ID'],
+				"Username": '#' + row.Login,
+				"End-of-Line Indicator": "#"
+			};
+
+			//add in the grade cols
+			colConversions.forEach(function (col) {
+				// if the column is named MapleTA Calculated Total add the percent sign
+				if (col.nameOld == "MapleTA Calculated Total") {
+					row[col.nameOld] += "%";
+				}
+
+//				// so we are assuming that there will either be a percent sign in it, or nothing at all
+//
+//				// if there is no percent sign, add the column Points Grade and calculate the point grade
+//				if (row[col.nameOld].indexOf('%') > -1) {
+//					rowOut[col.nameNew + ' Points Grade'] = (parseInt(row[col.nameOld], 10) / 100 * col.pointsPossible).toFixed(2);
+//				// if it a blank space, then add a blank space
+//				} else if (row[col.nameOld].length == 0) {
+//					rowOut[col.nameNew + ' Points Grade'] = "";
+//				} else {
+//					throw new Error("CSV file contains number scores and not percentages");
+//				}
+
+				if(row[col.nameOld].length != 0){
+					rowOut[col.nameNew + ' Points Grade'] = (parseInt(row[col.nameOld], 10) / 100 * col.pointsPossible).toFixed(2);
+				} else {
+					rowOut[col.nameNew + ' Points Grade'] = "";
+				}
+			});
+
+			return rowOut;
+		});
+
+		//back to csv text with the columns we want
+		colsWeWant = ["OrgDefinedId", "Username"];
+
+		//add in the new cols in the order they gave us
+		colConversions.forEach(function (col) {
+			colsWeWant.push(col.nameNew + ' Points Grade');
+		});
+
+		//D2L wants this
+		colsWeWant.push('End-of-Line Indicator');
+
+		return makeCsv(dataOut, colsWeWant);
+	}
+
+	/************** RETURN *****************/
+	objOut = {
+		parse: parse,
+		convert: convert,
+		getGradeColNames: getGradeColNames
+	};
+
+	//for node testing
+	if (inNode) {
+		module.exports = objOut;
+	}
+
+	//for Broswer
+	return objOut;
 }());
