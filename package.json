@@ -10,8 +10,6 @@
         "make": "node makeBundle.js"
 
     },
-    "author": "Joshua McKinney",
-    "license": "MIT",
     "devDependencies": {
         "browserify": "^13.1.0",
         "cheerio": "^0.20.0",
@@ -26,5 +24,7 @@
     },
     "dependencies": {
         "jquery": "^3.1.0"
-    }
+    },
+    "author": "Joshua McKinney",
+    "license": "MIT"
 }
